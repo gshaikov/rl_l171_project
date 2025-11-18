@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=64.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rl_l171"
+version = "2025.0.0"
+description = "Code for the L171 course"
+requires-python = ">=3.10.0"
+dependencies = [
+    "opencv-python == 4.9.0.80",
+    "numpy == 1.26.4",
+    "qpsolvers[quadprog]",
+    # Robotics
+    "mujoco == 3.2.4",
+    "pin == 2.7.0",
+    "ruckig == 0.12.2",
+    " mink == 0.0.13",
+    # Communication
+    "flask == 3.0.2",
+    "flask_socketio == 5.3.6",
+    "pyzmq >= 25.1.2",
+    "redis == 5.0.6",
+    # Mobile base
+    "phoenix6 == 25.3.2",
+    "pygame >= 2.5.2",
+    # Visualization
+    "viser == 0.2.6",
+    "yourdfpy == 0.0.56",
+    "tyro == 0.9.13",
+    # Rubik's Cube
+    "pycuber == 0.2.2",
+    # Others
+    "gymnasium == 0.29.1",
+    "matplotlib == 3.10.6",
+    "torch == 2.8.0",
+    "tensorboard == 2.20.0",
+    "moviepy==2.2.1",
+    "wandb",
+    "memory-profiler==0.61.0"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]

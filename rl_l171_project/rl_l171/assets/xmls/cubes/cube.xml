@@ -1,0 +1,9 @@
+<mujoco model="green_cube">
+    <worldbody>
+
+        <body name="middle">
+          <joint type="free" name="joint"/>
+          <geom type="box" size="0.055 0.055 0.055" rgba=".5 .7 .5 1" mass="0.01"/>
+        </body>
+    </worldbody>
+</mujoco>

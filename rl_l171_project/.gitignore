@@ -1,0 +1,17 @@
+# Python caches
+__pycache__/
+**/__pycache__/
+*.pyc
+*.egg-info
+
+MUJOCO_LOG.TXT
+runs/
+videos/
+wandb/
+
+# macOS system files
+.DS_Store
+
+# IDE folders
+.idea/
+.vscode/
