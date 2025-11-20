@@ -37,7 +37,8 @@ dependencies = [
     "tensorboard == 2.20.0",
     "moviepy==2.2.1",
     "wandb",
-    "memory-profiler==0.61.0"
+    "memory-profiler==0.61.0",
+    "ruff",
 ]
 
 [tool.setuptools.packages.find]
