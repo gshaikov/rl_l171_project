@@ -5,6 +5,9 @@ import time
 from dataclasses import dataclass
 
 import gymnasium as gym
+from gymnasium.wrappers import (
+    FlattenObservation,
+)  # or from gymnasium.wrappers import FlattenObservation
 import numpy as np
 import torch
 import torch.nn as nn
@@ -14,6 +17,15 @@ import tyro
 from torch.utils.tensorboard import SummaryWriter
 
 from rl_l171.algos.buffers import ReplayBuffer
+from rl_l171.gym_env import CubesGymEnv
+
+cube_env = CubesGymEnv(
+    render_mode="None",
+    max_nr_steps=100,
+    randomise_initial_position=True,
+    seed=5,
+    nr_cubes=10,
+)
 
 
 @dataclass
@@ -42,7 +54,7 @@ class Args:
     """the user or org name of the model repository from the Hugging Face Hub"""
 
     # Algorithm specific arguments
-    env_id: str = "CartPole-v1"
+    env_id: str = "Cubes-v0"
     """the id of the environment"""
     total_timesteps: int = 500000
     """total timesteps of the experiments"""
@@ -74,14 +86,22 @@ class Args:
 
 def make_env(env_id, seed, idx, capture_video, run_name):
     def thunk():
-        if capture_video and idx == 0:
-            env = gym.make(env_id, render_mode="rgb_array")
-            env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-        else:
-            env = gym.make(env_id)
-        env = gym.wrappers.RecordEpisodeStatistics(env)
-        env.action_space.seed(seed)
+        # if capture_video and idx == 0:
+        #     env = gym.make(env_id, render_mode="rgb_array")
+        #     env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
+        # else:
+        #     env = gym.make(env_id)
+        # env = gym.wrappers.RecordEpisodeStatistics(env)
+        # env.action_space.seed(seed)
+        #
+        env = cube_env
+        # 👇 flatten Dict -> Box (and Box stays Box)
+        env = FlattenObservation(env)
 
+        # env = gym.wrappers.RecordEpisodeStatistics(env)
+        # if capture_video and idx == 0:
+        #     env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
+        # env.seed(seed)
         return env
 
     return thunk
@@ -92,10 +112,13 @@ class QNetwork(nn.Module):
     def __init__(self, env):
         super().__init__()
         self.network = nn.Sequential(
+            nn.LayerNorm(np.array(env.single_observation_space.shape).prod()),
             nn.Linear(np.array(env.single_observation_space.shape).prod(), 120),
             nn.ReLU(),
+            nn.LayerNorm(120),
             nn.Linear(120, 84),
             nn.ReLU(),
+            nn.LayerNorm(84),
             nn.Linear(84, env.single_action_space.n),
         )
 
@@ -328,3 +351,7 @@ if __name__ == "__main__":
 
     envs.close()
     wandb_run.finish()
+
+"""
+python3 -m rl_l171.algos.dqn --track --total_timesteps 10000
+"""

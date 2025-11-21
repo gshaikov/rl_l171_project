@@ -1,4 +1,5 @@
 import time
+import itertools
 
 import gymnasium as gym
 import mujoco
@@ -51,7 +52,7 @@ class CubesGymEnv(gym.Env):
         # Number of mujoco simulation steps to execute per RL action
         self.steps_per_action = int(POLICY_CONTROL_PERIOD / self.sim.model.opt.timestep)
 
-        assert nr_cubes in [5, 10], "You should only focus  on 5 or 10 cubes!"
+        # assert nr_cubes in [5, 10], "You should only focus  on 5 or 10 cubes!"
         self.nr_cubes = nr_cubes
 
         self._max_episode_steps = max_nr_steps
@@ -63,6 +64,16 @@ class CubesGymEnv(gym.Env):
         low = np.array([-0.1, -0.1, -0.1, -0.1, -0.1, -0.1, 0])
         high = np.array([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 1])
         self.action_space = spaces.Box(low=low, high=high, dtype=np.float32)
+
+        # vals = [-0.1, 0.0, 0.1]
+        #
+        # self.ACTION_TABLE = np.array([
+        #     [bx, by, btheta, 0.0, 0.0, 0.0, 0.0]
+        #     for bx, by, btheta in itertools.product(vals, repeat=3)
+        # ], dtype=np.float32)
+        #
+        # Now the agent chooses an *index* into this table
+        # self.action_space = spaces.Discrete(self.ACTION_TABLE.shape[0])  # 27 actions
 
         # Observation space
         observation_space_dict = {
@@ -152,6 +163,10 @@ class CubesGymEnv(gym.Env):
         return _obs
 
     def step(self, action: np.ndarray):
+        # action is now a discrete index (int or np.int64)
+        # action_idx = int(action)
+        # action_vec = self.ACTION_TABLE[action_idx]  # shape (7,)
+
         # Get current end effector pose
         current_obs = self._full_observation()
         current_base_pose = current_obs["base_pose"]
