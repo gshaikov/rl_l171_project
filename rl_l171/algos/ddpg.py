@@ -3,10 +3,12 @@ import os
 import random
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 import gymnasium as gym
 from gymnasium.wrappers import (
     FlattenObservation,
+    RecordEpisodeStatistics
 )  # or from gymnasium.wrappers import FlattenObservation
 
 import numpy as np
@@ -19,16 +21,25 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.nn.utils import clip_grad_norm_
 
 from rl_l171.algos.buffers import ReplayBuffer
+from rl_l171.algos.dqn import linear_schedule
 from rl_l171.gym_env import CubesGymEnv
 
+n_cubes = 5
 cube_env = CubesGymEnv(
     render_mode="None",
-    max_nr_steps=100,
+    max_nr_steps=150,
     randomise_initial_position=True,
     seed=5,
-    nr_cubes=1,
+    nr_cubes=n_cubes,
 )
 
+cube_env_render = CubesGymEnv(
+    render_mode="human",
+    max_nr_steps=150,
+    randomise_initial_position=True,
+    seed=5,
+    nr_cubes=n_cubes,
+)
 
 @dataclass
 class Args:
@@ -91,7 +102,7 @@ def make_env(env_id, seed, idx, capture_video, run_name):
         #
         env = cube_env
         # 👇 flatten Dict -> Box (and Box stays Box)
-        env = FlattenObservation(env)
+        env = RecordEpisodeStatistics(FlattenObservation(env))
 
         # env = gym.wrappers.RecordEpisodeStatistics(env)
         # if capture_video and idx == 0:
@@ -101,6 +112,26 @@ def make_env(env_id, seed, idx, capture_video, run_name):
 
     return thunk
 
+def make_env_render(env_id, seed, idx, capture_video, run_name):
+    def thunk():
+        # if capture_video and idx == 0:
+        #     env = gym.make(env_id, render_mode="rgb_array")
+        #     env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
+        # else:
+        #     env = gym.make(env_id)
+        # env = gym.wrappers.RecordEpisodeStatistics(env)
+        # env.action_space.seed(seed)
+        #
+        env = cube_env_render
+        # 👇 flatten Dict -> Box (and Box stays Box)
+        env = RecordEpisodeStatistics(FlattenObservation(env))
+
+        # env = gym.wrappers.RecordEpisodeStatistics(env)
+        # if capture_video and idx == 0:
+        #     env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
+        # env.seed(seed)
+        return env
+    return thunk
 
 # ALGO LOGIC: initialize agent here:
 class QNetwork(nn.Module):
@@ -203,8 +234,8 @@ if __name__ == "__main__":
     target_actor = Actor(envs).to(device)
     target_actor.load_state_dict(actor.state_dict())
     qf1_target.load_state_dict(qf1.state_dict())
-    q_optimizer = optim.Adam(list(qf1.parameters()), lr=args.learning_rate)
-    actor_optimizer = optim.Adam(list(actor.parameters()), lr=args.learning_rate)
+    q_optimizer = optim.Adam(list(qf1.parameters()), lr=args.learning_rate, weight_decay=1e-4)
+    actor_optimizer = optim.Adam(list(actor.parameters()), lr=args.learning_rate, weight_decay=1e-4)
 
     envs.single_observation_space.dtype = np.float32
     rb = ReplayBuffer(
@@ -245,8 +276,6 @@ if __name__ == "__main__":
 
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, rewards, terminations, truncations, infos = envs.step(actions)
-        print(next_obs)
-        print(actions)
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         if "final_info" in infos:
             log.update({"episode/return": rewards.mean()})
@@ -283,7 +312,7 @@ if __name__ == "__main__":
                 qf1_next_target = qf1_target(data.next_observations, next_state_actions)
                 next_q_value = data.rewards.flatten() + (
                     1 - data.dones.flatten()
-                ) * args.gamma * (qf1_next_target).view(-1)
+                ) * args.gamma * qf1_next_target.view(-1)
 
             qf1_a_values = qf1(data.observations, data.actions).view(-1)
             qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
@@ -304,6 +333,11 @@ if __name__ == "__main__":
 
             q_optimizer.step()
 
+            total_grad_norm = torch.sqrt(
+                sum(p.grad.data.pow(2).sum() for p in qf1.parameters() if p.grad is not None)
+            ).item()
+            log.update({"train/critic_l2_norm": total_grad_norm})
+
             if global_step % args.policy_frequency == 0:
                 actor_loss = -qf1(data.observations, actor(data.observations)).mean()
                 actor_optimizer.zero_grad()
@@ -320,6 +354,10 @@ if __name__ == "__main__":
                 log.update({"train/actor_grad_norm": total_norm})
 
                 actor_optimizer.step()
+                total_grad_norm = torch.sqrt(
+                    sum(p.grad.data.pow(2).sum() for p in actor.parameters() if p.grad is not None)
+                ).item()
+                log.update({"train/actor_l2_norm": total_grad_norm})
 
                 # update the target network
                 for param, target_param in zip(
@@ -347,6 +385,9 @@ if __name__ == "__main__":
         wandb_run.log(log)
 
     if args.save_model:
+        model_dir = Path("runs") / run_name
+        model_dir.mkdir(parents=True, exist_ok=True)  # <-- ensure directory exists
+
         model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
         torch.save((actor.state_dict(), qf1.state_dict()), model_path)
         print(f"model saved to {model_path}")
@@ -354,13 +395,13 @@ if __name__ == "__main__":
 
         episodic_returns = evaluate(
             model_path,
-            make_env,
+            make_env_render,
             args.env_id,
-            eval_episodes=10,
+            eval_episodes=2,
             run_name=f"{run_name}-eval",
             Model=(Actor, QNetwork),
             device=device,
-            exploration_noise=args.exploration_noise,
+            exploration_noise=0,
         )
         for idx, episodic_return in enumerate(episodic_returns):
             log.update({"episode/return": episodic_return}, step=idx)

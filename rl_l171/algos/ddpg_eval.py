@@ -3,7 +3,7 @@ from typing import Callable
 import gymnasium as gym
 import torch
 import torch.nn as nn
-
+from rl_l171.algos.ddpg import make_env_render, Actor, QNetwork
 
 def evaluate(
     model_path: str,
@@ -14,7 +14,7 @@ def evaluate(
     Model: nn.Module,
     device: torch.device = torch.device("cpu"),
     capture_video: bool = True,
-    exploration_noise: float = 0.1,
+    exploration_noise: float = 0,
 ):
     envs = gym.vector.SyncVectorEnv([make_env(env_id, 0, 0, capture_video, run_name)])
     actor = Model[0](envs).to(device)
@@ -52,21 +52,23 @@ def evaluate(
     return episodic_returns
 
 
-# if __name__ == "__main__":
-#     from huggingface_hub import hf_hub_download
-#
-#     from cleanrl.ddpg_continuous_action import Actor, QNetwork, make_env
-#
-#     model_path = hf_hub_download(
-#         repo_id="cleanrl/HalfCheetah-v4-ddpg_continuous_action-seed1", filename="ddpg_continuous_action.cleanrl_model"
-#     )
-#     evaluate(
-#         model_path,
-#         make_env,
-#         "HalfCheetah-v4",
-#         eval_episodes=10,
-#         run_name=f"eval",
-#         Model=(Actor, QNetwork),
-#         device="cpu",
-#         capture_video=False,
-#     )
+if __name__ == "__main__":
+    run_name = "Cubes-v0__ddpg__1__1763795541"
+    exp_name = "ddpg"
+    model_path = f"runs/{run_name}/{exp_name}.cleanrl_model"
+
+    evaluate(
+        model_path,
+        make_env_render,
+        "Cubes-v0",
+        eval_episodes=10,
+        run_name=f"eval",
+        Model=(Actor, QNetwork),
+        device="cpu",
+        capture_video=False,
+        exploration_noise=0,
+    )
+
+'''
+python3 -m rl_l171.algos.ddpg_eval
+'''
