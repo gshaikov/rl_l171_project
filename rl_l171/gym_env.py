@@ -65,6 +65,7 @@ class CubesGymEnv(gym.Env):
         high = np.array([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 1])
         self.action_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
+        self.state_value = 0
         # vals = [-0.1, 0.0, 0.1]
         #
         # self.ACTION_TABLE = np.array([
@@ -102,14 +103,18 @@ class CubesGymEnv(gym.Env):
         # reward is the average of the negative distances of the cubes and the robot to the target
         # if distance less than INSIDE_THRESHOLD, zero reward
         cube_distances[cube_distances <= INSIDE_THRESHOLD] = 0
-        reward = -np.mean(cube_distances)
 
+        current_state_value = -np.mean(cube_distances)
+        if self.current_step == 0:
+            reward = 0
+        else:
+            reward = current_state_value - self.state_value
         completed = np.all(cube_distances < INSIDE_THRESHOLD)
         if completed:
             # we do not terminate the episode on purpose as we want the agent to learn to keep the cubes inside the target area
             print("All cubes collected!")
-
-        return reward
+        self.state_value = current_state_value
+        return 500 * reward
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)

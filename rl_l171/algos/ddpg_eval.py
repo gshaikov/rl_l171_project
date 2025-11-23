@@ -53,7 +53,7 @@ def evaluate(
 
 
 if __name__ == "__main__":
-    run_name = "Cubes-v0__ddpg__1__1763795541"
+    run_name = "Cubes-v0__ddpg__1__1763910904"
     exp_name = "ddpg"
     model_path = f"runs/{run_name}/{exp_name}.cleanrl_model"
 

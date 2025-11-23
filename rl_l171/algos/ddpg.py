@@ -20,14 +20,14 @@ import tyro
 from torch.utils.tensorboard import SummaryWriter
 from torch.nn.utils import clip_grad_norm_
 
-from rl_l171.algos.buffers import ReplayBuffer
+from rl_l171.algos.buffers import ReplayBuffer, PriorityBufferHeap, PriorityBuffer
 from rl_l171.algos.dqn import linear_schedule
 from rl_l171.gym_env import CubesGymEnv
 
 n_cubes = 5
 cube_env = CubesGymEnv(
     render_mode="None",
-    max_nr_steps=150,
+    max_nr_steps=100,
     randomise_initial_position=True,
     seed=5,
     nr_cubes=n_cubes,
@@ -35,7 +35,7 @@ cube_env = CubesGymEnv(
 
 cube_env_render = CubesGymEnv(
     render_mode="human",
-    max_nr_steps=150,
+    max_nr_steps=100,
     randomise_initial_position=True,
     seed=5,
     nr_cubes=n_cubes,
@@ -238,7 +238,7 @@ if __name__ == "__main__":
     actor_optimizer = optim.Adam(list(actor.parameters()), lr=args.learning_rate, weight_decay=1e-4)
 
     envs.single_observation_space.dtype = np.float32
-    rb = ReplayBuffer(
+    rb = PriorityBuffer(
         args.buffer_size,
         envs.single_observation_space,
         envs.single_action_space,
@@ -306,17 +306,23 @@ if __name__ == "__main__":
 
         # ALGO LOGIC: training.
         if global_step > args.learning_starts:
-            data = rb.sample(args.batch_size)
+            data, btch_ind = rb.sample(args.batch_size)
             with torch.no_grad():
                 next_state_actions = target_actor(data.next_observations)
                 qf1_next_target = qf1_target(data.next_observations, next_state_actions)
-                next_q_value = data.rewards.flatten() + (
-                    1 - data.dones.flatten()
-                ) * args.gamma * qf1_next_target.view(-1)
+                target_max = (
+                                     1 - data.dones.flatten()
+                             ) * qf1_next_target.view(-1)
+                next_q_value = data.rewards.flatten() + args.gamma * target_max
 
             qf1_a_values = qf1(data.observations, data.actions).view(-1)
-            qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
+            td_errors = next_q_value - qf1_a_values
+            rb.update_priorities(
+                batch_indices=btch_ind,
+                td_errors=td_errors.detach().cpu().numpy(),  # or td_errors.detach()
+            )
 
+            qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
             # optimize the model
             q_optimizer.zero_grad()
             qf1_loss.backward()
@@ -333,11 +339,10 @@ if __name__ == "__main__":
 
             q_optimizer.step()
 
-            total_grad_norm = torch.sqrt(
-                sum(p.grad.data.pow(2).sum() for p in qf1.parameters() if p.grad is not None)
+            total_norm = torch.sqrt(
+                sum(p.data.pow(2).sum() for p in qf1.parameters() if p.grad is not None)
             ).item()
-            log.update({"train/critic_l2_norm": total_grad_norm})
-
+            log.update({"train/critic_l2_norm": total_norm})
             if global_step % args.policy_frequency == 0:
                 actor_loss = -qf1(data.observations, actor(data.observations)).mean()
                 actor_optimizer.zero_grad()
@@ -354,10 +359,10 @@ if __name__ == "__main__":
                 log.update({"train/actor_grad_norm": total_norm})
 
                 actor_optimizer.step()
-                total_grad_norm = torch.sqrt(
-                    sum(p.grad.data.pow(2).sum() for p in actor.parameters() if p.grad is not None)
+                total_norm = torch.sqrt(
+                    sum(p.data.pow(2).sum() for p in actor.parameters() if p.grad is not None)
                 ).item()
-                log.update({"train/actor_l2_norm": total_grad_norm})
+                log.update({"train/actor_l2_norm": total_norm})
 
                 # update the target network
                 for param, target_param in zip(
@@ -372,14 +377,15 @@ if __name__ == "__main__":
                     target_param.data.copy_(
                         args.tau * param.data + (1 - args.tau) * target_param.data
                     )
-
                 # if global_step % 100 == 0:
                 log.update(
                     {
-                        "losses/qf1_values": qf1_a_values.mean().item(),
-                        "losses/qf1_loss": qf1_loss.item(),
-                        "losses/actor_loss": actor_loss.item(),
-                        "charts/SPS": int(global_step / (time.time() - start_time)),
+                        "train/qf1_values": qf1_a_values.mean().item(),
+                        "train/qf1_loss": qf1_loss.item(),
+                        "train/actor_loss": actor_loss.item(),
+                        "train/target_max": target_max,
+                        "train/reward": data.rewards.flatten().mean().item(),
+                        "trains/steps_per_second": int(global_step / (time.time() - start_time)),
                     }
                 )
         wandb_run.log(log)
