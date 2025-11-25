@@ -1068,7 +1068,7 @@ class PriorityBuffer(BaseBuffer):
             self.full = True
             self.pos = 0
 
-    def sample(self, batch_size: int) -> "ReplayBufferSamples":
+    def sample(self, batch_size: int):
         """
         Stochastic prioritized sampling (proportional PER).
 

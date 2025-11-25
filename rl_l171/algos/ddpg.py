@@ -5,6 +5,7 @@ import random
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 import gymnasium as gym
 from gymnasium.wrappers import (
@@ -42,7 +43,7 @@ class Args:
     """the wandb's project name"""
     wandb_entity: str = "leosanitt-university-of-cambridge"
     """the entity (team) of wandb's project"""
-    save_model: bool = False
+    save_model: bool = True
     """whether to save model into the `runs/{run_name}` folder"""
     upload_model: bool = False
     """whether to upload the saved model to huggingface"""
@@ -80,7 +81,16 @@ def make_env(
     capture_video,
     run_name,
     env_kwargs: dict | None = None,
+    video_trigger: Callable[[int], bool] = lambda i: i == 0,
 ):
+    env_kwargs = dict(
+        render_mode=None,
+        max_nr_steps=100,
+        randomise_initial_position=True,
+        seed=seed,
+        nr_cubes=5,
+    ) | (env_kwargs or {})
+
     def thunk():
         # if capture_video and idx == 0:
         #     env = gym.make(env_id, render_mode="rgb_array")
@@ -95,21 +105,14 @@ def make_env(
         #     env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
         # env.seed(seed)
 
-        env = CubesGymEnv(
-            render_mode=None,
-            max_nr_steps=100,
-            randomise_initial_position=True,
-            seed=seed,
-            nr_cubes=5,
-            **(env_kwargs if env_kwargs is not None else {}),
-        )
+        env = CubesGymEnv(**env_kwargs)
         env.action_space.seed(seed)
         if capture_video:
             env = RecordVideo(
                 env,
                 VIDEO_ROOT / run_name,
                 name_prefix="eval",
-                episode_trigger=lambda i: i == 0,
+                episode_trigger=video_trigger,
             )
         env = RecordEpisodeStatistics(FlattenObservation(env))
         return env
@@ -314,9 +317,7 @@ if __name__ == "__main__":
 
             log.update({"train/critic_grad_norm": total_norm})
 
-            critic_grad_norm = clip_grad_norm_(
-                qf1.parameters(), max_norm=args.max_grad_norm
-            )
+            clip_grad_norm_(qf1.parameters(), max_norm=args.max_grad_norm)
 
             q_optimizer.step()
 
@@ -336,11 +337,10 @@ if __name__ == "__main__":
 
                 log.update({"train/actor_grad_norm": total_norm})
 
-                actor_grad_norm = clip_grad_norm_(
-                    actor.parameters(), max_norm=args.max_grad_norm
-                )
+                clip_grad_norm_(actor.parameters(), max_norm=args.max_grad_norm)
 
                 actor_optimizer.step()
+
                 total_norm = torch.sqrt(
                     sum(
                         p.data.pow(2).sum()
@@ -399,7 +399,7 @@ if __name__ == "__main__":
                 idx=0,
                 capture_video=True,
                 run_name=run_name_eval,
-                env_kwargs={"render_mode": "human"},
+                env_kwargs={"render_mode": "rgb_array"},
             ),
             eval_episodes=1,
             Model=(Actor, QNetwork),
@@ -416,6 +416,15 @@ if __name__ == "__main__":
                 }
             )
         wandb_run.log(log)
+
+        for vid_file in video_dir.glob("*.mp4"):
+            wandb_run.log(
+                {
+                    f"eval/video_{vid_file.stem}": wandb.Video(
+                        str(vid_file), caption=vid_file.stem, fps=30, format="mp4"
+                    )
+                }
+            )
 
     envs.close()
     wandb.finish()

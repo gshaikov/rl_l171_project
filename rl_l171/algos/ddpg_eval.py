@@ -1,10 +1,13 @@
+from functools import partial
+from pathlib import Path
 from typing import Callable
 
 import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn as nn
-from rl_l171.algos.ddpg import Actor, QNetwork
+import tyro
+from rl_l171.algos.ddpg import Actor, QNetwork, make_env, Args
 
 
 def evaluate(
@@ -52,19 +55,28 @@ def evaluate(
 
 
 if __name__ == "__main__":
-    run_name = "Cubes-v0__ddpg__1__1763910904"
+    args = tyro.cli(Args)
+
+    run_name = "Cubes-v0__ddpg__1__1764073507"
     exp_name = "ddpg"
     model_path = f"runs/{run_name}/{exp_name}.cleanrl_model"
+    run_name_eval = f"{run_name}-eval"
 
     evaluate(
         model_path,
-        make_env,
-        "Cubes-v0",
-        eval_episodes=10,
-        run_name=f"eval",
+        partial(
+            make_env,
+            env_id=args.env_id,
+            seed=args.seed,
+            idx=0,
+            capture_video=True,
+            run_name=run_name_eval,
+            env_kwargs={"render_mode": "rgb_array"},
+            video_trigger=lambda _: True,
+        ),
+        eval_episodes=4,
         Model=(Actor, QNetwork),
-        device="cpu",
-        capture_video=False,
+        device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         exploration_noise=0,
     )
 
