@@ -125,13 +125,13 @@ class QNetwork(nn.Module):
         output_dim = 1
 
         self.net = nn.Sequential(
-            # nn.LayerNorm(input_dim),
+            # nn.RMSNorm(input_dim),
             nn.Linear(input_dim, 256),
             nn.ReLU(),
-            # nn.LayerNorm(256),
+            # nn.RMSNorm(256),
             nn.Linear(256, 256),
             nn.ReLU(),
-            # nn.LayerNorm(256),
+            # nn.RMSNorm(256),
             nn.Linear(256, output_dim),
         )
 
@@ -149,13 +149,13 @@ class Actor(nn.Module):
         output_dim = np.prod(env.single_action_space.shape)
 
         self.net = nn.Sequential(
-            # nn.LayerNorm(input_dim),
+            # nn.RMSNorm(input_dim),
             nn.Linear(input_dim, 256),
             nn.ReLU(),
-            # nn.LayerNorm(256),
+            # nn.RMSNorm(256),
             nn.Linear(256, 256),
             nn.ReLU(),
-            # nn.LayerNorm(256),
+            # nn.RMSNorm(256),
             nn.Linear(256, output_dim),
             nn.Tanh(),
         )
