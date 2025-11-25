@@ -654,6 +654,7 @@ class RolloutBuffer(BaseBuffer):
         )
         return RolloutBufferSamples(*tuple(map(self.to_torch, data)))
 
+
 class PriorityBufferHeap(BaseBuffer):
     """
     Priority buffer used in off-policy algorithms like SAC/TD3.
@@ -682,14 +683,14 @@ class PriorityBufferHeap(BaseBuffer):
     timeouts: np.ndarray
 
     def __init__(
-            self,
-            buffer_size: int,
-            observation_space: spaces.Space,
-            action_space: spaces.Space,
-            device: th.device | str = "auto",
-            n_envs: int = 1,
-            optimize_memory_usage: bool = False,
-            handle_timeout_termination: bool = True,
+        self,
+        buffer_size: int,
+        observation_space: spaces.Space,
+        action_space: spaces.Space,
+        device: th.device | str = "auto",
+        n_envs: int = 1,
+        optimize_memory_usage: bool = False,
+        handle_timeout_termination: bool = True,
     ):
         super().__init__(
             buffer_size, observation_space, action_space, device, n_envs=n_envs
@@ -749,10 +750,10 @@ class PriorityBufferHeap(BaseBuffer):
 
         if psutil is not None:
             total_memory_usage: float = (
-                    self.observations.nbytes
-                    + self.actions.nbytes
-                    + self.rewards.nbytes
-                    + self.dones.nbytes
+                self.observations.nbytes
+                + self.actions.nbytes
+                + self.rewards.nbytes
+                + self.dones.nbytes
             )
 
             if not optimize_memory_usage:
@@ -766,6 +767,7 @@ class PriorityBufferHeap(BaseBuffer):
                     "This system does not have apparently enough memory to store the complete "
                     f"replay buffer {total_memory_usage:.2f}GB > {mem_available:.2f}GB"
                 )
+
     def _push_to_heap(self, idx: int, priority: float) -> None:
         """
         Push a single transition into the priority queue.
@@ -779,13 +781,13 @@ class PriorityBufferHeap(BaseBuffer):
         heapq.heappush(self._heap, (-priority, self._heap_counter, idx))
 
     def add(
-            self,
-            obs: np.ndarray,
-            next_obs: np.ndarray,
-            action: np.ndarray,
-            reward: np.ndarray,
-            done: np.ndarray,
-            infos: list[dict[str, Any]],
+        self,
+        obs: np.ndarray,
+        next_obs: np.ndarray,
+        action: np.ndarray,
+        reward: np.ndarray,
+        done: np.ndarray,
+        infos: list[dict[str, Any]],
     ) -> None:
         # Reshape needed when using multiple envs with discrete observations
         # as numpy cannot broadcast (n_discrete,) to (n_discrete, 1)
@@ -874,8 +876,8 @@ class PriorityBufferHeap(BaseBuffer):
             # Only use dones that are not due to timeouts
             # deactivated by default (timeouts is initialized as an array of False)
             (
-                    self.dones[batch_inds, env_indices]
-                    * (1 - self.timeouts[batch_inds, env_indices])
+                self.dones[batch_inds, env_indices]
+                * (1 - self.timeouts[batch_inds, env_indices])
             ).reshape(-1, 1),
             self.rewards[batch_inds, env_indices].reshape(-1, 1),
         )
@@ -907,6 +909,7 @@ class PriorityBufferHeap(BaseBuffer):
             return np.float32
         return dtype
 
+
 import warnings
 from typing import Any
 
@@ -937,20 +940,22 @@ class PriorityBuffer(BaseBuffer):
     timeouts: np.ndarray
 
     def __init__(
-            self,
-            buffer_size: int,
-            observation_space: spaces.Space,
-            action_space: spaces.Space,
-            device: th.device | str = "auto",
-            n_envs: int = 1,
-            optimize_memory_usage: bool = False,
-            handle_timeout_termination: bool = True,
-            alpha: float = 0.6,  # how strong prioritization is
-            beta: float = 0.4,   # initial importance-sampling exponent
-            beta_increment_per_sampling: float = 1e-3,
-            eps: float = 1e-6
+        self,
+        buffer_size: int,
+        observation_space: spaces.Space,
+        action_space: spaces.Space,
+        device: th.device | str = "auto",
+        n_envs: int = 1,
+        optimize_memory_usage: bool = False,
+        handle_timeout_termination: bool = True,
+        alpha: float = 0.6,  # how strong prioritization is
+        beta: float = 0.4,  # initial importance-sampling exponent
+        beta_increment_per_sampling: float = 1e-3,
+        eps: float = 1e-6,
     ):
-        assert n_envs == 1, "This PriorityBuffer implementation assumes a single environment."
+        assert n_envs == 1, (
+            "This PriorityBuffer implementation assumes a single environment."
+        )
         super().__init__(
             buffer_size, observation_space, action_space, device, n_envs=n_envs
         )
@@ -994,10 +999,10 @@ class PriorityBuffer(BaseBuffer):
 
         if psutil is not None:
             total_memory_usage: float = (
-                    self.observations.nbytes
-                    + self.actions.nbytes
-                    + self.rewards.nbytes
-                    + self.dones.nbytes
+                self.observations.nbytes
+                + self.actions.nbytes
+                + self.rewards.nbytes
+                + self.dones.nbytes
             )
             if not optimize_memory_usage:
                 total_memory_usage += self.next_observations.nbytes
@@ -1020,13 +1025,13 @@ class PriorityBuffer(BaseBuffer):
         self.eps = eps
 
     def add(
-            self,
-            obs: np.ndarray,
-            next_obs: np.ndarray,
-            action: np.ndarray,
-            reward: np.ndarray,
-            done: np.ndarray,
-            infos: list[dict[str, Any]],
+        self,
+        obs: np.ndarray,
+        next_obs: np.ndarray,
+        action: np.ndarray,
+        reward: np.ndarray,
+        done: np.ndarray,
+        infos: list[dict[str, Any]],
     ) -> None:
         # Reshape when discrete obs + multi-env; here n_envs=1 but keep logic simple
         if isinstance(self.observation_space, spaces.Discrete):
@@ -1090,7 +1095,7 @@ class PriorityBuffer(BaseBuffer):
             prios[:] = 1.0
 
         # apply alpha: stronger prioritization when alpha > 0
-        scaled_prios = prios ** self.alpha
+        scaled_prios = prios**self.alpha
         scaled_sum = scaled_prios.sum()
         if scaled_sum <= 0:
             # fallback to uniform
@@ -1121,9 +1126,9 @@ class PriorityBuffer(BaseBuffer):
         return samples, batch_inds
 
     def update_priorities(
-            self,
-            batch_indices: np.ndarray,
-            td_errors: np.ndarray,
+        self,
+        batch_indices: np.ndarray,
+        td_errors: np.ndarray,
     ) -> None:
         """
         Update priorities for given indices using TD errors.
@@ -1135,15 +1140,15 @@ class PriorityBuffer(BaseBuffer):
         td_errors = np.asarray(td_errors).reshape(-1)
 
         for idx, err in zip(batch_indices, td_errors):
-            p = (abs(float(err)) + self.eps)
+            p = abs(float(err)) + self.eps
             self.priorities[idx] = p
             if p > self.max_priority:
                 self.max_priority = p
 
     def _get_samples(
-            self,
-            batch_inds: np.ndarray,
-            env_indices: np.ndarray,
+        self,
+        batch_inds: np.ndarray,
+        env_indices: np.ndarray,
     ) -> "ReplayBufferSamples":
         if self.optimize_memory_usage:
             next_obs = self.observations[
@@ -1157,8 +1162,8 @@ class PriorityBuffer(BaseBuffer):
             self.actions[batch_inds, env_indices, :],
             next_obs,
             (
-                    self.dones[batch_inds, env_indices]
-                    * (1 - self.timeouts[batch_inds, env_indices])
+                self.dones[batch_inds, env_indices]
+                * (1 - self.timeouts[batch_inds, env_indices])
             ).reshape(-1, 1),
             self.rewards[batch_inds, env_indices].reshape(-1, 1),
         )

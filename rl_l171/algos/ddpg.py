@@ -8,7 +8,7 @@ from pathlib import Path
 import gymnasium as gym
 from gymnasium.wrappers import (
     FlattenObservation,
-    RecordEpisodeStatistics
+    RecordEpisodeStatistics,
 )  # or from gymnasium.wrappers import FlattenObservation
 
 import numpy as np
@@ -40,6 +40,7 @@ cube_env_render = CubesGymEnv(
     seed=5,
     nr_cubes=n_cubes,
 )
+
 
 @dataclass
 class Args:
@@ -112,6 +113,7 @@ def make_env(env_id, seed, idx, capture_video, run_name):
 
     return thunk
 
+
 def make_env_render(env_id, seed, idx, capture_video, run_name):
     def thunk():
         # if capture_video and idx == 0:
@@ -131,7 +133,9 @@ def make_env_render(env_id, seed, idx, capture_video, run_name):
         #     env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
         # env.seed(seed)
         return env
+
     return thunk
+
 
 # ALGO LOGIC: initialize agent here:
 class QNetwork(nn.Module):
@@ -229,8 +233,12 @@ if __name__ == "__main__":
     target_actor = Actor(envs).to(device)
     target_actor.load_state_dict(actor.state_dict())
     qf1_target.load_state_dict(qf1.state_dict())
-    q_optimizer = optim.Adam(list(qf1.parameters()), lr=args.learning_rate, weight_decay=1e-4)
-    actor_optimizer = optim.Adam(list(actor.parameters()), lr=args.learning_rate, weight_decay=1e-4)
+    q_optimizer = optim.Adam(
+        list(qf1.parameters()), lr=args.learning_rate, weight_decay=1e-4
+    )
+    actor_optimizer = optim.Adam(
+        list(actor.parameters()), lr=args.learning_rate, weight_decay=1e-4
+    )
 
     envs.single_observation_space.dtype = np.float32
     rb = PriorityBuffer(
@@ -307,9 +315,7 @@ if __name__ == "__main__":
             with torch.no_grad():
                 next_state_actions = target_actor(data.next_observations)
                 qf1_next_target = qf1_target(data.next_observations, next_state_actions)
-                target_max = (
-                                     1 - data.dones.flatten()
-                             ) * qf1_next_target.view(-1)
+                target_max = (1 - data.dones.flatten()) * qf1_next_target.view(-1)
                 next_q_value = data.rewards.flatten() + args.gamma * target_max
 
             qf1_a_values = qf1(data.observations, data.actions).view(-1)
@@ -335,7 +341,6 @@ if __name__ == "__main__":
                 qf1.parameters(), max_norm=args.max_grad_norm
             )
 
-
             q_optimizer.step()
 
             total_norm = torch.sqrt(
@@ -360,7 +365,11 @@ if __name__ == "__main__":
 
                 actor_optimizer.step()
                 total_norm = torch.sqrt(
-                    sum(p.data.pow(2).sum() for p in actor.parameters() if p.grad is not None)
+                    sum(
+                        p.data.pow(2).sum()
+                        for p in actor.parameters()
+                        if p.grad is not None
+                    )
                 ).item()
                 log.update({"train/actor_l2_norm": total_norm})
 
@@ -385,7 +394,9 @@ if __name__ == "__main__":
                         "train/actor_loss": actor_loss.item(),
                         "train/target_max": target_max.mean().item(),
                         "train/reward": data.rewards.flatten().mean().item(),
-                        "trains/steps_per_second": int(global_step / (time.time() - start_time)),
+                        "trains/steps_per_second": int(
+                            global_step / (time.time() - start_time)
+                        ),
                     }
                 )
         wandb_run.log(log)

@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 from rl_l171.algos.ddpg import make_env_render, Actor, QNetwork
 
+
 def evaluate(
     model_path: str,
     make_env: Callable,
@@ -69,6 +70,6 @@ if __name__ == "__main__":
         exploration_noise=0,
     )
 
-'''
+"""
 python3 -m rl_l171.algos.ddpg_eval
-'''
+"""
