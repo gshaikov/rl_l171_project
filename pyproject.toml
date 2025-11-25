@@ -42,6 +42,7 @@ dependencies = [
     "cleanrl>=0.4.8",
     "huggingface-hub>=1.1.4",
     "tqdm>=4.67.1",
+    "pip>=25.3",
 ]
 
 [tool.setuptools.packages.find]
