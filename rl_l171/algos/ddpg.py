@@ -279,23 +279,23 @@ if __name__ == "__main__":
 
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, rewards, terminations, truncations, infos = envs.step(actions)
-        state_value = envs.get_attr("state_value")[0]
+
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         if "final_info" in infos:
-            log.update({"episode/return": rewards.mean()})
-            log.update({"episode/cube_distance": -state_value})
             for info in infos["final_info"]:
                 if info and "episode" in info:
                     pbar.set_postfix(
                         {
                             "ep_return": info["episode"]["r"],
                             "ep_length": info["episode"]["l"],
+                            "ep_cube_dist": info["cube_distance"],
                         }
                     )
                     log.update(
                         {
                             "episode/return": info["episode"]["r"],
                             "episode/length": info["episode"]["l"],
+                            "episode/cube_distance": info["cube_distance"],
                         }
                     )
 

@@ -212,7 +212,7 @@ class CubesGymEnv(gym.Env):
         self.current_step += 1
         _truncated = self.current_step >= self._max_episode_steps
 
-        _info = {}
+        _info = {"cube_distance": -self.state_value}
 
         return _obs, _reward, False, _truncated, _info
 
