@@ -19,11 +19,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import tyro
-from torch.utils.tensorboard import SummaryWriter
 from torch.nn.utils import clip_grad_norm_
 
 from rl_l171.algos.buffers import ReplayBuffer, PriorityBufferHeap, PriorityBuffer
-from rl_l171.algos.dqn import linear_schedule
 from rl_l171.gym_env import CubesGymEnv
 
 
@@ -40,8 +38,6 @@ class Args:
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
     cuda: bool = True
     """if toggled, cuda will be enabled by default"""
-    track: bool = False
-    """if toggled, this experiment will be tracked with Weights and Biases"""
     wandb_project_name: str = "rl171"
     """the wandb's project name"""
     wandb_entity: str = "leosanitt-university-of-cambridge"
@@ -70,7 +66,7 @@ class Args:
     """the batch size of sample from the reply memory"""
     exploration_noise: float = 0.1
     """the scale of exploration noise"""
-    learning_starts: int = 25e3
+    learning_starts: int = 25_000
     """timestep to start learning"""
     policy_frequency: int = 2
     """the frequency of training policy (delayed)"""
@@ -182,9 +178,6 @@ if __name__ == "__main__":
 
     args = tyro.cli(Args)
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
-    if not args.track:
-        raise AttributeError("must use --track.")
-    import wandb
 
     wandb_run = wandb.init(
         project=args.wandb_project_name,
