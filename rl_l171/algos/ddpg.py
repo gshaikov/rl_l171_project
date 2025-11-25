@@ -118,34 +118,48 @@ def make_env(
 class QNetwork(nn.Module):
     def __init__(self, env):
         super().__init__()
-        # self.norm0 = nn.LayerNorm(np.array(env.single_observation_space.shape).prod() + np.prod(env.single_action_space.shape))
-        self.fc1 = nn.Linear(
-            np.array(env.single_observation_space.shape).prod()
-            + np.prod(env.single_action_space.shape),
-            256,
+
+        input_dim = np.prod(env.single_observation_space.shape) + np.prod(
+            env.single_action_space.shape
         )
-        # self.norm1 = nn.LayerNorm(256)
-        self.fc2 = nn.Linear(256, 256)
-        # self.norm2 = nn.LayerNorm(256)
-        self.fc3 = nn.Linear(256, 1)
+        output_dim = 1
+
+        self.net = nn.Sequential(
+            # nn.LayerNorm(input_dim),
+            nn.Linear(input_dim, 256),
+            nn.ReLU(),
+            # nn.LayerNorm(256),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            # nn.LayerNorm(256),
+            nn.Linear(256, output_dim),
+        )
 
     def forward(self, x, a):
         x = torch.cat([x, a], 1)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
+        x = self.net(x)
         return x
 
 
 class Actor(nn.Module):
     def __init__(self, env):
         super().__init__()
-        # self.norm0 = nn.LayerNorm(np.array(env.single_observation_space.shape).prod())
-        self.fc1 = nn.Linear(np.array(env.single_observation_space.shape).prod(), 256)
-        # self.norm1 = nn.LayerNorm(256)
-        self.fc2 = nn.Linear(256, 256)
-        # self.norm2 = nn.LayerNorm(256)
-        self.fc_mu = nn.Linear(256, np.prod(env.single_action_space.shape))
+
+        input_dim = np.prod(env.single_observation_space.shape)
+        output_dim = np.prod(env.single_action_space.shape)
+
+        self.net = nn.Sequential(
+            # nn.LayerNorm(input_dim),
+            nn.Linear(input_dim, 256),
+            nn.ReLU(),
+            # nn.LayerNorm(256),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            # nn.LayerNorm(256),
+            nn.Linear(256, output_dim),
+            nn.Tanh(),
+        )
+
         # action rescaling
         self.register_buffer(
             "action_scale",
@@ -163,9 +177,7 @@ class Actor(nn.Module):
         )
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = torch.tanh(self.fc_mu(x))
+        x = self.net(x)
         return x * self.action_scale + self.action_bias
 
 
