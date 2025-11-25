@@ -65,16 +65,9 @@ class CubesGymEnv(gym.Env):
         high = np.array([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 1])
         self.action_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
+        # NOTE: ADDED BY US
         self.state_value = 0
-        # vals = [-0.1, 0.0, 0.1]
-        #
-        # self.ACTION_TABLE = np.array([
-        #     [bx, by, btheta, 0.0, 0.0, 0.0, 0.0]
-        #     for bx, by, btheta in itertools.product(vals, repeat=3)
-        # ], dtype=np.float32)
-        #
-        # Now the agent chooses an *index* into this table
-        # self.action_space = spaces.Discrete(self.ACTION_TABLE.shape[0])  # 27 actions
+        # NOTE: ADDED BY US
 
         # Observation space
         observation_space_dict = {
@@ -104,17 +97,21 @@ class CubesGymEnv(gym.Env):
         # if distance less than INSIDE_THRESHOLD, zero reward
         cube_distances[cube_distances <= INSIDE_THRESHOLD] = 0
 
+        # NOTE: ADDED BY US
         current_state_value = -np.mean(cube_distances)
         if self.current_step == 0:
-            reward = 0
+            reward = 0.0
         else:
             reward = current_state_value - self.state_value
+        self.state_value = current_state_value
+        # NOTE: ADDED BY US
+
         completed = np.all(cube_distances < INSIDE_THRESHOLD)
         if completed:
             # we do not terminate the episode on purpose as we want the agent to learn to keep the cubes inside the target area
             print("All cubes collected!")
-        self.state_value = current_state_value
-        return 500 * reward
+
+        return reward
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -168,10 +165,6 @@ class CubesGymEnv(gym.Env):
         return _obs
 
     def step(self, action: np.ndarray):
-        # action is now a discrete index (int or np.int64)
-        # action_idx = int(action)
-        # action_vec = self.ACTION_TABLE[action_idx]  # shape (7,)
-
         # Get current end effector pose
         current_obs = self._full_observation()
         current_base_pose = current_obs["base_pose"]
@@ -212,7 +205,9 @@ class CubesGymEnv(gym.Env):
         self.current_step += 1
         _truncated = self.current_step >= self._max_episode_steps
 
+        # NOTE: ADDED BY US
         _info = {"cube_distance": -self.state_value}
+        # NOTE: ADDED BY US
 
         return _obs, _reward, False, _truncated, _info
 
