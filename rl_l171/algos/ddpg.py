@@ -226,10 +226,16 @@ if __name__ == "__main__":
     target_actor.load_state_dict(actor.state_dict())
     qf1_target.load_state_dict(qf1.state_dict())
     q_optimizer = optim.Adam(
-        list(qf1.parameters()), lr=args.learning_rate, weight_decay=1e-4
+        list(qf1.parameters()),
+        lr=args.learning_rate,
+        weight_decay=1e-4,
+        betas=(0.9, 0.9),
     )
     actor_optimizer = optim.Adam(
-        list(actor.parameters()), lr=args.learning_rate, weight_decay=1e-4
+        list(actor.parameters()),
+        lr=args.learning_rate,
+        weight_decay=1e-4,
+        betas=(0.9, 0.9),
     )
 
     envs.single_observation_space.dtype = np.float32
