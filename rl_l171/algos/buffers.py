@@ -396,13 +396,15 @@ class ReplayBuffer(BaseBuffer):
             self.full = True
             self.pos = 0
 
-    def sample(self, batch_size: int) -> ReplayBufferSamples:
+    def sample(self, batch_size: int, critic_prios=False, actor_prios=False) -> ReplayBufferSamples:
         """
         Sample elements from the replay buffer.
         Custom sampling when using memory efficient variant,
         as we should not sample the element with index `self.pos`
         See https://github.com/DLR-RM/stable-baselines3/pull/28#issuecomment-637559274
 
+        :param actor_prios:
+        :param critic_prios:
         :param batch_size: Number of element to sample
         :return:
         """
@@ -441,7 +443,7 @@ class ReplayBuffer(BaseBuffer):
             ).reshape(-1, 1),
             self.rewards[batch_inds, env_indices].reshape(-1, 1),
         )
-        return ReplayBufferSamples(*tuple(map(self.to_torch, data)))
+        return ReplayBufferSamples(*tuple(map(self.to_torch, data))), None, None
 
     @staticmethod
     def _maybe_cast_dtype(dtype: np.typing.DTypeLike) -> np.typing.DTypeLike:
@@ -742,7 +744,6 @@ class PriorityBufferHeap(BaseBuffer):
 
         # Start with all new samples having maximal priority
         self.max_priority: float = 10.0
-
         # Priority queue: stores (-priority, counter, buffer_index, env_index)
         # We use negative priority because heapq is a min-heap.
         self._heap: list[tuple[float, int, int, int]] = []
@@ -949,8 +950,8 @@ class PriorityBuffer(BaseBuffer):
         optimize_memory_usage: bool = False,
         handle_timeout_termination: bool = True,
         alpha: float = 0.6,  # how strong prioritization is
-        beta: float = 0.4,  # initial importance-sampling exponent
-        beta_increment_per_sampling: float = 1e-3,
+        beta: float = 0.1,  # initial importance-sampling exponent
+        beta_increment_per_sampling: float = 0,
         eps: float = 1e-6,
     ):
         assert n_envs == 1, (
@@ -1017,8 +1018,10 @@ class PriorityBuffer(BaseBuffer):
 
         # --- prioritized replay specific stuff ---
         # 1D because single env: priorities[i] is for time index i
-        self.priorities = np.zeros(self.buffer_size, dtype=np.float32)
-        self.max_priority: float = 1.0  # new samples get this
+        self.critic_priorities = np.zeros(self.buffer_size, dtype=np.float32)
+        self.actor_priorities = np.zeros(self.buffer_size, dtype=np.float32)
+        self.max_priority: float = 10.0  # new samples get this
+        self.min_priority: float = 0.0
         self.alpha = alpha
         self.beta = beta
         self.beta_increment_per_sampling = beta_increment_per_sampling
@@ -1060,7 +1063,8 @@ class PriorityBuffer(BaseBuffer):
 
         # --- initialize priority for this new transition ---
         # new transitions are sampled at least once by giving them current max priority
-        self.priorities[idx] = self.max_priority
+        self.critic_priorities[idx] = self.max_priority
+        self.actor_priorities[idx] = self.max_priority
 
         # advance pointer
         self.pos += 1
@@ -1068,13 +1072,15 @@ class PriorityBuffer(BaseBuffer):
             self.full = True
             self.pos = 0
 
-    def sample(self, batch_size: int):
+    def sample(self, batch_size: int, critic_prios = True, actor_prios = False):
         """
         Stochastic prioritized sampling (proportional PER).
 
         - P(i) ∝ priorities[i]^alpha
         - uses importance sampling weights w_i to correct bias
         """
+        assert not (critic_prios and actor_prios)
+
         if batch_size <= 0:
             raise ValueError("batch_size must be > 0")
 
@@ -1088,8 +1094,12 @@ class PriorityBuffer(BaseBuffer):
             raise ValueError("Cannot sample from an empty buffer")
 
         # priorities for valid indices
-        prios = self.priorities[:valid_size].copy()
-
+        if critic_prios:
+            prios = self.critic_priorities[:valid_size].copy()
+        elif actor_prios:
+            prios = self.actor_priorities[:valid_size].copy()
+        else:
+            prios = np.zeros(valid_size, dtype=np.float32)
         # in case priorities are all zero (e.g. before first update)
         if np.all(prios == 0):
             prios[:] = 1.0
@@ -1113,7 +1123,7 @@ class PriorityBuffer(BaseBuffer):
         N = valid_size
         batch_probs = probs[batch_inds]
         weights = (N * batch_probs) ** (-self.beta)
-        weights /= weights.max()  # normalize to [0, 1]
+        weights /= weights.mean()  # normalize to [0, 1]
 
         # increase beta slowly towards 1
         self.beta = min(1.0, self.beta + self.beta_increment_per_sampling)
@@ -1123,9 +1133,9 @@ class PriorityBuffer(BaseBuffer):
 
         samples = self._get_samples(batch_inds, env_indices)
 
-        return samples, batch_inds
+        return samples, batch_inds, weights
 
-    def update_priorities(
+    def update_critic_priorities(
         self,
         batch_indices: np.ndarray,
         td_errors: np.ndarray,
@@ -1141,14 +1151,35 @@ class PriorityBuffer(BaseBuffer):
 
         for idx, err in zip(batch_indices, td_errors):
             p = abs(float(err)) + self.eps
-            self.priorities[idx] = p
+            self.critic_priorities[idx] = p
             if p > self.max_priority:
                 self.max_priority = p
+
+    def update_actor_priorities(
+            self,
+            batch_indices: np.ndarray,
+            td_errors: np.ndarray,
+    ) -> None:
+        """
+        Update priorities for given indices using TD errors.
+
+        :param batch_indices: time indices of sampled transitions (shape [batch])
+        :param td_errors: TD errors for those transitions (shape [batch] or [batch,1])
+        """
+        batch_indices = np.asarray(batch_indices).reshape(-1)
+        td_errors = np.asarray(td_errors).reshape(-1)
+
+        for idx, err in zip(batch_indices, td_errors):
+            p = abs(float(err)) + self.eps
+            self.actor_priorities[idx] = p
+            if p > self.max_priority:
+                self.max_priority = p
+
 
     def _get_samples(
         self,
         batch_inds: np.ndarray,
-        env_indices: np.ndarray,
+        env_indices: np.ndarray = None,
     ) -> "ReplayBufferSamples":
         if self.optimize_memory_usage:
             next_obs = self.observations[

@@ -56,6 +56,7 @@ class Args:
     total_timesteps: int = 50_000
     """total timesteps of the experiments"""
     learning_rate: float = 1e-4
+    actor_learning_rate: float = 5e-4
     """the learning rate of the optimizer"""
     buffer_size: int = int(1e6)
     """the replay memory buffer size"""
@@ -79,6 +80,17 @@ class Args:
     # environment
     max_nr_steps: int = 100
     nr_cubes: int = 5
+
+    """buffer strategy to use"""
+    """
+    random
+    priority_critic
+    priority_actor
+    priority_actor_critic
+    priority_inverse_critic
+    priority_streaming
+    """
+    buffer_strategy = "random"
 
 
 def make_env(
@@ -254,13 +266,22 @@ if __name__ == "__main__":
     )
 
     envs.single_observation_space.dtype = np.float32
-    rb = PriorityBuffer(
-        args.buffer_size,
-        envs.single_observation_space,
-        envs.single_action_space,
-        device,
-        handle_timeout_termination=False,
-    )
+    if args.buffer_strategy == "random":
+        rb = ReplayBuffer(
+            args.buffer_size,
+            envs.single_observation_space,
+            envs.single_action_space,
+            device,
+            handle_timeout_termination=False,
+        )
+    else:
+        rb = PriorityBuffer(
+            args.buffer_size,
+            envs.single_observation_space,
+            envs.single_action_space,
+            device,
+            handle_timeout_termination=False,
+        )
 
     wandb_run.define_metric("global_step")
     wandb_run.define_metric("exploration/*", step_metric="global_step")
@@ -327,7 +348,15 @@ if __name__ == "__main__":
 
         # ALGO LOGIC: training.
         if global_step > args.learning_starts:
-            data, btch_ind = rb.sample(args.batch_size)
+            match args.buffer_strategy:
+                case "random" | "priority_critic" | "priority_inverse_critic" | "priority_actor_critic":
+                    data, btch_ind, weights = rb.sample(args.batch_size, critic_prios=True, actor_prios=False)
+                case "priority_actor":
+                    data, btch_ind, weights = rb.sample(args.batch_size, critic_prios=False, actor_prios=True)
+                case _:
+                    assert False, "Strategy is invalid"
+
+
             with torch.no_grad():
                 next_state_actions = target_actor(data.next_observations)
                 qf1_next_target = qf1_target(data.next_observations, next_state_actions)
@@ -336,13 +365,26 @@ if __name__ == "__main__":
 
             qf1_a_values = qf1(data.observations, data.actions).view(-1)
             td_errors = next_q_value - qf1_a_values
-            rb.update_priorities(
-                batch_indices=btch_ind,
-                td_errors=td_errors.detach().cpu().numpy(),  # priority sampling
-                # td_errors=np.array([1] * args.batch_size),  # random sampling
-            )
+            match args.buffer_strategy:
+                case "random" | "priority_actor":
+                    qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
+                case "priority_critic" | "priority_inverse_critic" | "priority_actor_critic":
+                    weights = torch.as_tensor(weights, device=data.observations.device, dtype=torch.float32).detach()
 
-            qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
+                    rb.update_critic_priorities(
+                        batch_indices=btch_ind,
+                        td_errors=td_errors.detach().cpu().numpy(),  # priority sampling
+                        # td_errors=np.array([1] * args.batch_size),  # random sampling
+                    )
+                    # PER loss: weights multiply the per-sample loss
+                    per_sample_loss = F.mse_loss(
+                        qf1_a_values, next_q_value, reduction="none"
+                    )  # shape [batch]
+                    qf1_loss = (weights * per_sample_loss).mean()
+                    # qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
+
+                case _:
+                    assert False, "Strategy is invalid"
 
             log.update(
                 {
@@ -376,8 +418,33 @@ if __name__ == "__main__":
             log.update({"train/critic_l2_norm": total_norm})
 
             if (global_step - args.learning_starts) % args.policy_frequency == 0:
+                match args.buffer_strategy:
+                    case "random" | "priority_critic":
+                        pass
+                    case "priority_actor" | "priority_actor_critic" | "priority_inverse_critic":
+                        data, btch_ind, weights = rb.sample(args.batch_size, critic_prios=False, actor_prios=True)
+                        weights = torch.as_tensor(weights, device=data.observations.device, dtype=torch.float32).detach()
+
                 # optimize the policy model
-                actor_loss = -qf1(data.observations, actor(data.observations)).mean()
+                actor_td_errors = -qf1(data.observations, actor(data.observations))
+                # Ensure weights broadcast correctly
+                match args.buffer_strategy:
+                    case "priority_critic" | "random":
+                        pass
+                    case "priority_actor" | "priority_actor_critic":
+                        rb.update_actor_priorities(btch_ind, actor_td_errors.detach())
+                        weights = weights.view_as(actor_td_errors)
+                        # Apply weights (no .detach() unless you explicitly want to break gradients)
+                        actor_td_errors = actor_td_errors * weights
+
+                    case "priority_inverse_critic":
+                        rb.update_actor_priorities(btch_ind, 10 - np.minimum(np.abs(td_errors.detach().cpu().numpy()), 10))
+                        weights = weights.view_as(actor_td_errors)
+                        # Apply weights (no .detach() unless you explicitly want to break gradients)
+                        actor_td_errors = actor_td_errors * weights
+
+                actor_loss = actor_td_errors.mean()
+
                 log.update({"train/actor_loss": actor_loss.item()})
 
                 actor_optimizer.zero_grad()
