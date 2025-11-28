@@ -84,7 +84,9 @@ class Args:
     # exploration
     start_e: float = 2 / 3
     end_e: float = 1 / 30
-    exploration_fraction: float = 0.5
+    # if [0, 1  ] -> interpreted as a fraction
+    # if [1, inf] -> interpreted as timesteps
+    exploration_timesteps: float = 0.5
 
     # environment
     max_nr_steps: int = 100
@@ -339,7 +341,15 @@ if __name__ == "__main__":
     start_time = time.perf_counter()
 
     t0 = args.learning_starts
-    T = int((args.total_timesteps - t0) * args.exploration_fraction)
+    if 0 <= args.exploration_timesteps <= 1:
+        T = t0 + int((args.total_timesteps - t0) * args.exploration_timesteps)
+    elif args.exploration_timesteps > 1:
+        T = int(args.exploration_timesteps)
+    else:
+        raise Exception(
+            "exploration_timesteps should be in [0, 1] or > 1, "
+            f"got {args.exploration_timesteps}"
+        )
     epsilon_func = partial(linear_schedule, t0=t0, T=T, x0=args.start_e, xT=args.end_e)
 
     # TRY NOT TO MODIFY: start the game
