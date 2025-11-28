@@ -397,7 +397,9 @@ class ReplayBuffer(BaseBuffer):
             self.full = True
             self.pos = 0
 
-    def sample(self, batch_size: int, critic_prios=False, actor_prios=False) -> ReplayBufferSamples:
+    def sample(
+        self, batch_size: int, critic_prios=False, actor_prios=False
+    ) -> ReplayBufferSamples:
         """
         Sample elements from the replay buffer.
         Custom sampling when using memory efficient variant,
@@ -1073,7 +1075,7 @@ class PriorityBuffer(BaseBuffer):
             self.full = True
             self.pos = 0
 
-    def sample(self, batch_size: int, critic_prios = True, actor_prios = False):
+    def sample(self, batch_size: int, critic_prios=True, actor_prios=False):
         """
         Stochastic prioritized sampling (proportional PER).
 
@@ -1157,9 +1159,9 @@ class PriorityBuffer(BaseBuffer):
                 self.max_priority = p
 
     def update_actor_priorities(
-            self,
-            batch_indices: np.ndarray,
-            td_errors: np.ndarray,
+        self,
+        batch_indices: np.ndarray,
+        td_errors: np.ndarray,
     ) -> None:
         """
         Update priorities for given indices using TD errors.
@@ -1175,7 +1177,6 @@ class PriorityBuffer(BaseBuffer):
             self.actor_priorities[idx] = p
             if p > self.max_priority:
                 self.max_priority = p
-
 
     def _get_samples(
         self,
@@ -1207,6 +1208,7 @@ class PriorityBuffer(BaseBuffer):
             return np.float32
         return dtype
 
+
 class PriorityStreamingBuffer(BaseBuffer):
     """
     Replay buffer used in off-policy algorithms like SAC/TD3.
@@ -1235,14 +1237,14 @@ class PriorityStreamingBuffer(BaseBuffer):
     timeouts: np.ndarray
 
     def __init__(
-            self,
-            buffer_size: int,
-            observation_space: spaces.Space,
-            action_space: spaces.Space,
-            device: th.device | str = "auto",
-            n_envs: int = 1,
-            optimize_memory_usage: bool = False,
-            handle_timeout_termination: bool = True,
+        self,
+        buffer_size: int,
+        observation_space: spaces.Space,
+        action_space: spaces.Space,
+        device: th.device | str = "auto",
+        n_envs: int = 1,
+        optimize_memory_usage: bool = False,
+        handle_timeout_termination: bool = True,
     ):
         super().__init__(
             buffer_size, observation_space, action_space, device, n_envs=n_envs
@@ -1287,14 +1289,14 @@ class PriorityStreamingBuffer(BaseBuffer):
         # see https://github.com/DLR-RM/stable-baselines3/issues/284
         self.handle_timeout_termination = handle_timeout_termination
         self.timeouts = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
-        self.valid_incdices : set[int] = set()
+        self.valid_incdices: set[int] = set()
 
         if psutil is not None:
             total_memory_usage: float = (
-                    self.observations.nbytes
-                    + self.actions.nbytes
-                    + self.rewards.nbytes
-                    + self.dones.nbytes
+                self.observations.nbytes
+                + self.actions.nbytes
+                + self.rewards.nbytes
+                + self.dones.nbytes
             )
 
             if not optimize_memory_usage:
@@ -1310,13 +1312,13 @@ class PriorityStreamingBuffer(BaseBuffer):
                 )
 
     def add(
-            self,
-            obs: np.ndarray,
-            next_obs: np.ndarray,
-            action: np.ndarray,
-            reward: np.ndarray,
-            done: np.ndarray,
-            infos: list[dict[str, Any]],
+        self,
+        obs: np.ndarray,
+        next_obs: np.ndarray,
+        action: np.ndarray,
+        reward: np.ndarray,
+        done: np.ndarray,
+        infos: list[dict[str, Any]],
     ) -> None:
         # Reshape needed when using multiple envs with discrete observations
         # as numpy cannot broadcast (n_discrete,) to (n_discrete, 1)
@@ -1330,7 +1332,7 @@ class PriorityStreamingBuffer(BaseBuffer):
         # Copy to avoid modification by reference
         if self.full:
             # Buffer is full and add the new entry in a random position
-            self.pos = random.randint(0, self.buffer_size-1)
+            self.pos = random.randint(0, self.buffer_size - 1)
 
         self.observations[self.pos] = np.array(obs)
 
@@ -1353,8 +1355,9 @@ class PriorityStreamingBuffer(BaseBuffer):
             self.full = True
             self.pos = 0
 
-
-    def sample(self, batch_size: int, critic_prios=False, actor_prios=False) -> ReplayBufferSamples:
+    def sample(
+        self, batch_size: int, critic_prios=False, actor_prios=False
+    ) -> ReplayBufferSamples:
         """
         Sample elements from the replay buffer.
         Custom sampling when using memory efficient variant,
@@ -1392,8 +1395,8 @@ class PriorityStreamingBuffer(BaseBuffer):
             # Only use dones that are not due to timeouts
             # deactivated by default (timeouts is initialized as an array of False)
             (
-                    self.dones[batch_inds, env_indices]
-                    * (1 - self.timeouts[batch_inds, env_indices])
+                self.dones[batch_inds, env_indices]
+                * (1 - self.timeouts[batch_inds, env_indices])
             ).reshape(-1, 1),
             self.rewards[batch_inds, env_indices].reshape(-1, 1),
         )
