@@ -537,7 +537,9 @@ if __name__ == "__main__":
                     case "priority_critic" | "random":
                         pass
                     case "priority_actor" | "priority_actor_critic":
-                        rb.update_actor_priorities(btch_ind, actor_td_errors.detach())
+                        rb.update_actor_priorities(
+                            btch_ind, actor_td_errors.detach().cpu().numpy()
+                        )
                         weights = weights.view_as(actor_td_errors)
                         # Apply weights (no .detach() unless you explicitly want to break gradients)
                         actor_td_errors = actor_td_errors * weights
