@@ -952,9 +952,9 @@ class PriorityBuffer(BaseBuffer):
         n_envs: int = 1,
         optimize_memory_usage: bool = False,
         handle_timeout_termination: bool = True,
-        alpha: float = 0.3,  # how strong prioritization is
-        beta: float = 0.1,  # initial importance-sampling exponent
-        beta_increment_per_sampling: float = 1e-5,
+        alpha: float = 0.6,  # how strong prioritization is
+        beta: float = 0.4,  # initial importance-sampling exponent
+        beta_increment_per_sampling: float = 1e-3,
         eps: float = 1e-6,
     ):
         assert n_envs == 1, (
@@ -1023,7 +1023,7 @@ class PriorityBuffer(BaseBuffer):
         # 1D because single env: priorities[i] is for time index i
         self.critic_priorities = np.zeros(self.buffer_size, dtype=np.float32)
         self.actor_priorities = np.zeros(self.buffer_size, dtype=np.float32)
-        self.max_priority: float = 10.0  # new samples get this
+        self.max_priority: float = 1.0  # new samples get this
         self.min_priority: float = 0.0
         self.alpha = alpha
         self.beta = beta
@@ -1126,7 +1126,7 @@ class PriorityBuffer(BaseBuffer):
         N = valid_size
         batch_probs = probs[batch_inds]
         weights = (N * batch_probs) ** (-self.beta)
-        weights /= weights.mean()  # normalize to [0, 1]
+        weights /= weights.max()  # normalize to [0, 1]
 
         # increase beta slowly towards 1
         self.beta = min(1.0, self.beta + self.beta_increment_per_sampling)
