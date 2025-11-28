@@ -11,6 +11,7 @@ strategies=(
 for s in "${strategies[@]}"; do
     python -m rl_l171.algos.ddpg \
         --buffer_strategy "$s" \
+        --exp_name "ddpg_$s" \
         --exploration_timesteps 25000 \
         --total_timesteps 100000 &
     sleep 1
