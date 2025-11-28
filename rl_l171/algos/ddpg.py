@@ -1,4 +1,5 @@
 # docs and experiment results can be found at https://docs.cleanrl.dev/rl-algorithms/ddpg/#ddpg_continuous_actionpy
+import math
 from functools import partial
 import os
 import random
@@ -18,11 +19,12 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.nn.init as init
 import torch.optim as optim
 import tyro
 from torch.nn.utils import clip_grad_norm_
 
-from rl_l171.algos.buffers import ReplayBuffer, PriorityBufferHeap, PriorityBuffer
+from rl_l171.algos.buffers import ReplayBuffer, PriorityBufferHeap, PriorityBuffer, PriorityStreamingBuffer
 from rl_l171.gym_env import CubesGymEnv
 
 
@@ -60,6 +62,8 @@ class Args:
     """the learning rate of the optimizer"""
     buffer_size: int = int(1e6)
     """the replay memory buffer size"""
+    small_buffer_size : int = int(1e4)
+    """the replay memory buffer size for the streaming style algorithm"""
     gamma: float = 0.99
     """the discount factor gamma"""
     tau: float = 0.005
@@ -90,7 +94,7 @@ class Args:
     priority_inverse_critic
     priority_streaming
     """
-    buffer_strategy = "random"
+    buffer_strategy = "priority_streaming"
 
 
 def make_env(
@@ -146,11 +150,18 @@ class QNetwork(nn.Module):
             # nn.RMSNorm(256),
             nn.Linear(256, output_dim),
         )
+        # self.net.apply(self._sparse_init)
 
     def forward(self, x, a):
         x = torch.cat([x, a], 1)
         x = self.net(x)
         return x
+
+    def _sparse_init(self, m):
+        if isinstance(m, nn.Linear):
+            init.sparse_(m.weight, sparsity=0.9, std=0.01)
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
 
 
 class Actor(nn.Module):
@@ -187,11 +198,17 @@ class Actor(nn.Module):
                 dtype=torch.float32,
             ),
         )
+        # self.net.apply(self._sparse_init)
 
     def forward(self, x):
         x = self.net(x)
         return x * self.action_scale + self.action_bias
 
+    def _sparse_init(self, m):
+        if isinstance(m, nn.Linear):
+            init.sparse_(m.weight, sparsity=0.9, std=0.01)
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
 
 def linear_schedule(t, t0: int, T: int, x0: float, xT: float):
     if t <= t0:
@@ -266,22 +283,38 @@ if __name__ == "__main__":
     )
 
     envs.single_observation_space.dtype = np.float32
-    if args.buffer_strategy == "random":
-        rb = ReplayBuffer(
-            args.buffer_size,
-            envs.single_observation_space,
-            envs.single_action_space,
-            device,
-            handle_timeout_termination=False,
-        )
-    else:
-        rb = PriorityBuffer(
-            args.buffer_size,
-            envs.single_observation_space,
-            envs.single_action_space,
-            device,
-            handle_timeout_termination=False,
-        )
+
+    total_reward = 0
+    total_square_reward = 0
+
+    match args.buffer_strategy:
+        case "random":
+            rb = ReplayBuffer(
+                args.buffer_size,
+                envs.single_observation_space,
+                envs.single_action_space,
+                device,
+                handle_timeout_termination=False,
+            )
+        case "priority_critic" | "priority_actor" | "priority_actor_critic" | "priority_inverse_critic":
+            rb = PriorityBuffer(
+                args.buffer_size,
+                envs.single_observation_space,
+                envs.single_action_space,
+                device,
+                handle_timeout_termination=False,
+            )
+        case "priority_streaming":
+            rb = PriorityStreamingBuffer(
+                args.small_buffer_size,
+                envs.single_observation_space,
+                envs.single_action_space,
+                device,
+                handle_timeout_termination=False,
+            )
+
+        case _:
+            assert False, "Strategy is invalid"
 
     wandb_run.define_metric("global_step")
     wandb_run.define_metric("exploration/*", step_metric="global_step")
@@ -341,7 +374,28 @@ if __name__ == "__main__":
         for idx, trunc in enumerate(truncations):
             if trunc:
                 real_next_obs[idx] = infos["final_observation"][idx]
-        rb.add(obs, real_next_obs, actions, rewards, terminations, infos)
+        match args.buffer_strategy:
+            case "random" | "priority_critic" | "priority_actor" | "priority_actor_critic" | "priority_inverse_critic":
+                rb.add(obs, real_next_obs, actions, rewards, terminations, infos)
+            case "priority_streaming":
+                r = abs(rewards.mean().item())
+                total_reward += r
+                total_square_reward += r ** 2
+
+                if global_step <= args.learning_starts:
+                    rb.add(obs, real_next_obs, actions, rewards, terminations, infos)
+                else:
+                    mean = total_reward / global_step
+                    mean_sq = total_square_reward / global_step
+                    var = mean_sq - mean**2
+                    std = math.sqrt(max(var, 1e-8))
+                    z = (r - mean) / std
+                    inv_pdf_like = math.exp(0.5 * (z ** 2))
+
+                    # Map to [0, 1], increasing with rareness
+                    p_add = inv_pdf_like / (1.0 + inv_pdf_like)
+                    if random.random() < p_add:
+                        rb.add(obs, real_next_obs, actions, rewards, terminations, infos)
 
         # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
         obs = next_obs
@@ -349,7 +403,7 @@ if __name__ == "__main__":
         # ALGO LOGIC: training.
         if global_step > args.learning_starts:
             match args.buffer_strategy:
-                case "random" | "priority_critic" | "priority_inverse_critic" | "priority_actor_critic":
+                case "random" | "priority_critic" | "priority_inverse_critic" | "priority_actor_critic" | "priority_streaming":
                     data, btch_ind, weights = rb.sample(args.batch_size, critic_prios=True, actor_prios=False)
                 case "priority_actor":
                     data, btch_ind, weights = rb.sample(args.batch_size, critic_prios=False, actor_prios=True)
@@ -366,7 +420,7 @@ if __name__ == "__main__":
             qf1_a_values = qf1(data.observations, data.actions).view(-1)
             td_errors = next_q_value - qf1_a_values
             match args.buffer_strategy:
-                case "random" | "priority_actor":
+                case "random" | "priority_actor" | "priority_streaming":
                     qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
                 case "priority_critic" | "priority_inverse_critic" | "priority_actor_critic":
                     weights = torch.as_tensor(weights, device=data.observations.device, dtype=torch.float32).detach()
@@ -382,7 +436,8 @@ if __name__ == "__main__":
                     )  # shape [batch]
                     qf1_loss = (weights * per_sample_loss).mean()
                     # qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
-
+                case "priority_streaming":
+                    qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
                 case _:
                     assert False, "Strategy is invalid"
 
@@ -419,11 +474,13 @@ if __name__ == "__main__":
 
             if (global_step - args.learning_starts) % args.policy_frequency == 0:
                 match args.buffer_strategy:
-                    case "random" | "priority_critic":
+                    case "random" | "priority_critic" | "priority_streaming":
                         pass
                     case "priority_actor" | "priority_actor_critic" | "priority_inverse_critic":
                         data, btch_ind, weights = rb.sample(args.batch_size, critic_prios=False, actor_prios=True)
                         weights = torch.as_tensor(weights, device=data.observations.device, dtype=torch.float32).detach()
+                    case _:
+                        assert False, "Strategy is invalid"
 
                 # optimize the policy model
                 actor_td_errors = -qf1(data.observations, actor(data.observations))
@@ -442,6 +499,10 @@ if __name__ == "__main__":
                         weights = weights.view_as(actor_td_errors)
                         # Apply weights (no .detach() unless you explicitly want to break gradients)
                         actor_td_errors = actor_td_errors * weights
+                    case "priority_streaming":
+                        pass
+                    case _:
+                        assert False, "Strategy is invalid"
 
                 actor_loss = actor_td_errors.mean()
 

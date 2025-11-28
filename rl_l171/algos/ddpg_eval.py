@@ -63,7 +63,7 @@ def evaluate(
 class EvalArgs(Args):
     seed: int = 42
     wandb_project_name: str = "rl171_eval"
-    run_name: str = "Cubes-v0__ddpg__1__1764091177"
+    run_name: str = "Cubes-v0__ddpg__1__1764252577"
 
 
 if __name__ == "__main__":
