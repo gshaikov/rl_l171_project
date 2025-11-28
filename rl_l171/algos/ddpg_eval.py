@@ -52,7 +52,7 @@ if __name__ == "__main__":
     run_name_eval = f"{args.run_name}-eval"
     video_dir = VIDEO_ROOT / run_name_eval
 
-    episodic_returns = evaluate(
+    episodic_returns, cube_distances, n_cleaned = evaluate(
         make_env=partial(
             make_env,
             env_id=args.env_id,
@@ -77,6 +77,10 @@ if __name__ == "__main__":
         {
             "eval/return_mean": episodic_returns.mean().item(),
             "eval/return_std": episodic_returns.std().item(),
+            "eval/cube_distance_mean": cube_distances.mean().item(),
+            "eval/cube_distance_std": cube_distances.std().item(),
+            "eval/n_cleaned_mean": n_cleaned.mean().item(),
+            "eval/n_cleaned_std": n_cleaned.std().item(),
         }
     )
     wandb_run.log(log)

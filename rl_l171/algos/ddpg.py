@@ -244,6 +244,8 @@ def evaluate(
 
     obs, _ = envs.reset()
     episodic_returns = []
+    cube_distances = []
+    n_cleaned = []
     while len(episodic_returns) < eval_episodes:
         actions = actor(torch.tensor(obs).to(device))
         actions += torch.normal(0, actor.action_scale)
@@ -262,10 +264,16 @@ def evaluate(
                     f"eval_episode={len(episodic_returns)}, episodic_return={info['episode']['r']}"
                 )
                 episodic_returns.append(info["episode"]["r"])
+                cube_distances.append(info["cube_distance"])
+                n_cleaned.append(info["n_cleaned"])
         obs = next_obs
 
     envs.close()
-    return np.concatenate(episodic_returns)
+    return (
+        np.concatenate(episodic_returns),
+        np.array(cube_distances),
+        np.array(n_cleaned),
+    )
 
 
 if __name__ == "__main__":
@@ -432,6 +440,7 @@ if __name__ == "__main__":
                             "episode/return": info["episode"]["r"],
                             "episode/length": info["episode"]["l"],
                             "episode/cube_distance": info["cube_distance"],
+                            "episode/n_cleaned": info["n_cleaned"],
                         }
                     )
 
@@ -659,7 +668,7 @@ if __name__ == "__main__":
         if (global_step + 1) % args.evaluation_frequency == 0:
             run_name_eval = f"{run_name}-eval-{global_step}"
 
-            episodic_returns = evaluate(
+            episodic_returns, cube_distances, n_cleaned = evaluate(
                 make_env=partial(
                     make_env,
                     env_id=args.env_id,
@@ -682,6 +691,10 @@ if __name__ == "__main__":
                 {
                     "eval/return_mean": episodic_returns.mean().item(),
                     "eval/return_std": episodic_returns.std().item(),
+                    "eval/cube_distance_mean": cube_distances.mean().item(),
+                    "eval/cube_distance_std": cube_distances.std().item(),
+                    "eval/n_cleaned_mean": n_cleaned.mean().item(),
+                    "eval/n_cleaned_std": n_cleaned.std().item(),
                 }
             )
 

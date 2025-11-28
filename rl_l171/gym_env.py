@@ -82,7 +82,7 @@ class CubesGymEnv(gym.Env):
             )
         self.observation_space = spaces.Dict(observation_space_dict)
 
-    def _calculate_reward(self, obs: dict) -> tuple[float, bool]:
+    def _calculate_reward(self, obs: dict) -> tuple[float, int]:
         """Calculates reward and determines if the episode is done."""
 
         # (N, 2) array of current cube 2D positions
@@ -106,12 +106,13 @@ class CubesGymEnv(gym.Env):
         self.state_value = current_state_value
         # NOTE: ADDED BY US
 
+        n_cleaned = np.sum(cube_distances < INSIDE_THRESHOLD)
         completed = np.all(cube_distances < INSIDE_THRESHOLD)
         if completed:
             # we do not terminate the episode on purpose as we want the agent to learn to keep the cubes inside the target area
             print("All cubes collected!")
 
-        return reward
+        return reward, n_cleaned
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -200,13 +201,13 @@ class CubesGymEnv(gym.Env):
 
         # Get new observation, calculate reward, and check termination
         _obs = self._agent_obs()
-        _reward = self._calculate_reward(_obs)
+        _reward, _n_cleaned = self._calculate_reward(_obs)
 
         self.current_step += 1
         _truncated = self.current_step >= self._max_episode_steps
 
         # NOTE: ADDED BY US
-        _info = {"cube_distance": -self.state_value}
+        _info = {"cube_distance": -self.state_value, "n_cleaned": _n_cleaned}
         # NOTE: ADDED BY US
 
         return _obs, _reward, False, _truncated, _info
