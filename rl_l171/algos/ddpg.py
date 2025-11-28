@@ -100,6 +100,8 @@ class Args:
     priority_streaming
     """
     buffer_strategy: str = "priority_critic"
+    pb_beta: float = 0.0
+    pb_beta_increment_per_sampling: float = 0.0
 
 
 def make_env(
@@ -314,6 +316,8 @@ if __name__ == "__main__":
                 envs.single_action_space,
                 device,
                 handle_timeout_termination=False,
+                beta=args.pb_beta,
+                beta_increment_per_sampling=args.pb_beta_increment_per_sampling,
             )
         case "priority_streaming":
             rb = PriorityStreamingBuffer(

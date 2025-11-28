@@ -1155,8 +1155,8 @@ class PriorityBuffer(BaseBuffer):
         for idx, err in zip(batch_indices, td_errors):
             p = abs(float(err)) + self.eps
             self.critic_priorities[idx] = p
-            if p > self.max_priority:
-                self.max_priority = p
+            # if p > self.max_priority:
+            #     self.max_priority = p
 
     def update_actor_priorities(
         self,
