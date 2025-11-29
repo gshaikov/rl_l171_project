@@ -84,9 +84,7 @@ class Args:
     # exploration
     start_e: float = 2 / 3
     end_e: float = 1 / 30
-    # if [0, 1  ] -> interpreted as a fraction
-    # if [1, inf] -> interpreted as timesteps
-    exploration_timesteps: float = 0.5
+    exploration_fraction: float = 0.5
 
     # environment
     max_nr_steps: int = 100
@@ -99,14 +97,10 @@ class Args:
     priority_actor
     priority_actor_critic
     priority_inverse_critic
-    priority_streaming
+    priority_streaming_rewards
+    priority_streaming_td
     """
-    buffer_strategy: str = "priority_critic"
-    pb_beta: float = 0.0
-    pb_beta_increment_per_sampling: float = 0.0
-
-    evaluation_frequency: int = 5_000
-    """the timesteps between two evaluations"""
+    buffer_strategy = "priority_streaming_rewards"
 
 
 def make_env(
@@ -232,58 +226,12 @@ def linear_schedule(t, t0: int, T: int, x0: float, xT: float):
     return max(slope * t + x0, xT)
 
 
-@torch.no_grad()
-def evaluate(
-    make_env: Callable[[], Callable[[], gym.Env]],
-    load_model: Callable[[gym.Env, torch.device], nn.Module],
-    eval_episodes: int,
-    device: torch.device = torch.device("cpu"),
-):
-    envs = gym.vector.SyncVectorEnv([make_env()])
-    actor = load_model(envs, device)
-
-    obs, _ = envs.reset()
-    episodic_returns = []
-    cube_distances = []
-    n_cleaned = []
-    while len(episodic_returns) < eval_episodes:
-        actions = actor(torch.tensor(obs).to(device))
-        actions += torch.normal(0, actor.action_scale)
-        actions = (
-            actions.cpu()
-            .numpy()
-            .clip(envs.single_action_space.low, envs.single_action_space.high)
-        )
-
-        next_obs, _, _, _, infos = envs.step(actions)
-        if "final_info" in infos:
-            for info in infos["final_info"]:
-                if "episode" not in info:
-                    continue
-                print(
-                    f"eval_episode={len(episodic_returns)}, episodic_return={info['episode']['r']}"
-                )
-                episodic_returns.append(info["episode"]["r"])
-                cube_distances.append(info["cube_distance"])
-                n_cleaned.append(info["n_cleaned"])
-        obs = next_obs
-
-    envs.close()
-    return (
-        np.concatenate(episodic_returns),
-        np.array(cube_distances),
-        np.array(n_cleaned),
-    )
-
-
 if __name__ == "__main__":
     import wandb
     from tqdm import tqdm
 
     args = tyro.cli(Args)
-    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{time.monotonic()}"
-
-    assert args.total_timesteps % args.evaluation_frequency == 0
+    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
 
     wandb_run = wandb.init(
         project=args.wandb_project_name,
@@ -367,10 +315,8 @@ if __name__ == "__main__":
                 envs.single_action_space,
                 device,
                 handle_timeout_termination=False,
-                beta=args.pb_beta,
-                beta_increment_per_sampling=args.pb_beta_increment_per_sampling,
             )
-        case "priority_streaming":
+        case "priority_streaming_rewards" | "priority_streaming_td":
             rb = PriorityStreamingBuffer(
                 args.small_buffer_size,
                 envs.single_observation_space,
@@ -390,15 +336,7 @@ if __name__ == "__main__":
     start_time = time.perf_counter()
 
     t0 = args.learning_starts
-    if 0 <= args.exploration_timesteps <= 1:
-        T = t0 + int((args.total_timesteps - t0) * args.exploration_timesteps)
-    elif args.exploration_timesteps > 1:
-        T = int(args.exploration_timesteps)
-    else:
-        raise Exception(
-            "exploration_timesteps should be in [0, 1] or > 1, "
-            f"got {args.exploration_timesteps}"
-        )
+    T = int((args.total_timesteps - t0) * args.exploration_fraction)
     epsilon_func = partial(linear_schedule, t0=t0, T=T, x0=args.start_e, xT=args.end_e)
 
     # TRY NOT TO MODIFY: start the game
@@ -440,7 +378,6 @@ if __name__ == "__main__":
                             "episode/return": info["episode"]["r"],
                             "episode/length": info["episode"]["l"],
                             "episode/cube_distance": info["cube_distance"],
-                            "episode/n_cleaned": info["n_cleaned"],
                         }
                     )
 
@@ -458,7 +395,7 @@ if __name__ == "__main__":
                 | "priority_inverse_critic"
             ):
                 rb.add(obs, real_next_obs, actions, rewards, terminations, infos)
-            case "priority_streaming":
+            case "priority_streaming_rewards":
                 r = abs(rewards.mean().item())
                 total_reward += r
                 total_square_reward += r**2
@@ -479,6 +416,8 @@ if __name__ == "__main__":
                         rb.add(
                             obs, real_next_obs, actions, rewards, terminations, infos
                         )
+            case "priority_streaming_td":
+                rb.add(obs, real_next_obs, actions, rewards, terminations, infos)
 
         # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
         obs = next_obs
@@ -491,8 +430,12 @@ if __name__ == "__main__":
                     | "priority_critic"
                     | "priority_inverse_critic"
                     | "priority_actor_critic"
-                    | "priority_streaming"
+                    | "priority_streaming_rewards"
                 ):
+                    data, btch_ind, weights = rb.sample(
+                        args.batch_size, critic_prios=True, actor_prios=False
+                    )
+                case "priority_streaming_td":
                     data, btch_ind, weights = rb.sample(
                         args.batch_size, critic_prios=True, actor_prios=False
                     )
@@ -512,7 +455,7 @@ if __name__ == "__main__":
             qf1_a_values = qf1(data.observations, data.actions).view(-1)
             td_errors = next_q_value - qf1_a_values
             match args.buffer_strategy:
-                case "random" | "priority_actor" | "priority_streaming":
+                case "random" | "priority_actor":
                     qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
                 case (
                     "priority_critic"
@@ -534,7 +477,12 @@ if __name__ == "__main__":
                     )  # shape [batch]
                     qf1_loss = (weights * per_sample_loss).mean()
                     # qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
-                case "priority_streaming":
+                case "priority_streaming_td":
+                    # td_errors
+                    probs = 1 / (abs(td_errors.detach().cpu().numpy()) + 1e-4)
+                    to_remove_ind = np.random.choice(btch_ind, size=1, replace=False,p=probs)
+                    qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
+                case "priority_streaming_rewards":
                     qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
                 case _:
                     assert False, "Strategy is invalid"
@@ -572,7 +520,7 @@ if __name__ == "__main__":
 
             if (global_step - args.learning_starts) % args.policy_frequency == 0:
                 match args.buffer_strategy:
-                    case "random" | "priority_critic" | "priority_streaming":
+                    case "random" | "priority_critic" | "priority_streaming_rewards" | "priority_streaming_td":
                         pass
                     case (
                         "priority_actor"
@@ -597,9 +545,7 @@ if __name__ == "__main__":
                     case "priority_critic" | "random":
                         pass
                     case "priority_actor" | "priority_actor_critic":
-                        rb.update_actor_priorities(
-                            btch_ind, actor_td_errors.detach().cpu().numpy()
-                        )
+                        rb.update_actor_priorities(btch_ind, actor_td_errors.detach())
                         weights = weights.view_as(actor_td_errors)
                         # Apply weights (no .detach() unless you explicitly want to break gradients)
                         actor_td_errors = actor_td_errors * weights
@@ -613,7 +559,9 @@ if __name__ == "__main__":
                         weights = weights.view_as(actor_td_errors)
                         # Apply weights (no .detach() unless you explicitly want to break gradients)
                         actor_td_errors = actor_td_errors * weights
-                    case "priority_streaming":
+                    case "priority_streaming_rewards":
+                        pass
+                    case "priority_streaming_td":
                         pass
                     case _:
                         assert False, "Strategy is invalid"
@@ -664,59 +612,58 @@ if __name__ == "__main__":
                 ),
             }
         )
-
-        if (global_step + 1) % args.evaluation_frequency == 0:
-            run_name_eval = f"{run_name}-eval-{global_step}"
-
-            episodic_returns, cube_distances, n_cleaned = evaluate(
-                make_env=partial(
-                    make_env,
-                    env_id=args.env_id,
-                    seed=args.seed + global_step,
-                    idx=0,
-                    capture_video=(global_step + 1) == args.total_timesteps,
-                    run_name=run_name_eval,
-                    env_kwargs={
-                        "render_mode": "rgb_array",
-                        "max_nr_steps": 500,
-                        "nr_cubes": args.nr_cubes,
-                    },
-                ),
-                load_model=lambda _, device: actor.to(device),
-                eval_episodes=20,
-                device=device,
-            )
-
-            log.update(
-                {
-                    "eval/return_mean": episodic_returns.mean().item(),
-                    "eval/return_std": episodic_returns.std().item(),
-                    "eval/cube_distance_mean": cube_distances.mean().item(),
-                    "eval/cube_distance_std": cube_distances.std().item(),
-                    "eval/n_cleaned_mean": n_cleaned.mean().item(),
-                    "eval/n_cleaned_std": n_cleaned.std().item(),
-                }
-            )
-
-            video_dir = VIDEO_ROOT / run_name_eval
-            for vid_file in video_dir.glob("*.mp4"):
-                log.update(
-                    {
-                        f"eval/video_{vid_file.stem}": wandb.Video(
-                            str(vid_file), caption=vid_file.stem, fps=30, format="mp4"
-                        )
-                    }
-                )
-
         wandb_run.log(log)
 
     if args.save_model:
         model_dir = Path("runs") / run_name
-        model_dir.mkdir(parents=True, exist_ok=True)
+        model_dir.mkdir(parents=True, exist_ok=True)  # <-- ensure directory exists
 
         model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
         torch.save((actor.state_dict(), qf1.state_dict()), model_path)
         print(f"model saved to {model_path}")
+        from rl_l171.algos.ddpg_eval import evaluate
+
+        run_name_eval = f"{run_name}-eval"
+        video_dir = VIDEO_ROOT / run_name_eval
+
+        episodic_returns = evaluate(
+            model_path,
+            partial(
+                make_env,
+                env_id=args.env_id,
+                seed=args.seed,
+                idx=0,
+                capture_video=True,
+                run_name=run_name_eval,
+                env_kwargs={
+                    "render_mode": "rgb_array",
+                    "max_nr_steps": 500,
+                    "nr_cubes": args.nr_cubes,
+                },
+            ),
+            eval_episodes=10,
+            Model=(Actor, QNetwork),
+            device=device,
+            exploration_noise=0,
+        )
+
+        log = {}
+        log.update(
+            {
+                "eval/return_mean": episodic_returns.mean().item(),
+                "eval/return_std": episodic_returns.std().item(),
+            }
+        )
+        wandb_run.log(log)
+
+        for vid_file in video_dir.glob("*.mp4"):
+            wandb_run.log(
+                {
+                    f"eval/video_{vid_file.stem}": wandb.Video(
+                        str(vid_file), caption=vid_file.stem, fps=30, format="mp4"
+                    )
+                }
+            )
 
     envs.close()
     wandb.finish()
