@@ -27,7 +27,7 @@ def to_sweep(args: SweepArgs) -> dict:
             "total_timesteps": {"values": [50000, 100000, 200000]},
             "learning_rate": {
                 "distribution": "log_uniform_values",
-                "min": 1e-5,
+                "min": 1e-4,
                 "max": 1e-3,
             },
             "buffer_size": {"values": [2048, 10_000, 1_000_000]},
