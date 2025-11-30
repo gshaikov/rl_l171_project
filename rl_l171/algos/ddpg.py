@@ -15,6 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
 import torch.optim as optim
+import wandb
 from gymnasium.wrappers import (
     FlattenObservation,
     RecordEpisodeStatistics,
@@ -710,7 +711,6 @@ def train(wandb_run: "Run"):
 
 if __name__ == "__main__":
     import tyro
-    import wandb
 
     args = tyro.cli(Args)
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{time.monotonic()}"
