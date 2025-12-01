@@ -8,10 +8,6 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
-# necessary when running on headless servers
-# to avoid OpenGL error
-os.environ["MUJOCO_GL"] = "egl"
-
 import gymnasium as gym
 import numpy as np
 import torch
