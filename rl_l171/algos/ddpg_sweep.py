@@ -96,7 +96,7 @@ if __name__ == "__main__":
         sweep_id = args.wandb_sweep_id
         print(f"Using existing sweep: {sweep_id}")
 
-    num_workers = 6
+    num_workers = 8
     runs_per_worker = 24
 
     def run_agent():
