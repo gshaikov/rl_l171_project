@@ -11,13 +11,14 @@ class SweepArgs(Args):
     wandb_project_name: str = "rl171_sweep"
     wandb_sweep_id: str | None = None
     seed: int = 0
-    eval_episodes: int = 100
     method: str = "grid"
     metric: str = "eval/cube_distance_mean"
     goal: str = "minimize"
 
     # latest sweep
     total_timesteps: int = 200_000
+    eval_episodes: int = 10
+    evaluation_frequency: int = 20_000
 
 
 def to_sweep(args: SweepArgs) -> dict:
@@ -95,7 +96,7 @@ if __name__ == "__main__":
         sweep_id = args.wandb_sweep_id
         print(f"Using existing sweep: {sweep_id}")
 
-    num_workers = 6
+    num_workers = 8
     runs_per_worker = 24
 
     def run_agent():
