@@ -381,7 +381,7 @@ def train(wandb_run: "Run"):
 
     t0 = args.learning_starts
     if 0 <= args.exploration_timesteps <= 1:
-        T = t0 + int((args.total_timesteps - t0) * args.exploration_timesteps)
+        T = int(args.total_timesteps * args.exploration_timesteps)
     elif args.exploration_timesteps > 1:
         T = int(args.exploration_timesteps)
     else:
