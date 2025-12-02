@@ -11,13 +11,14 @@ class SweepArgs(Args):
     wandb_project_name: str = "rl171_sweep"
     wandb_sweep_id: str | None = None
     seed: int = 0
-    eval_episodes: int = 100
     method: str = "grid"
     metric: str = "eval/cube_distance_mean"
     goal: str = "minimize"
 
     # latest sweep
     total_timesteps: int = 200_000
+    eval_episodes: int = 10
+    evaluation_frequency: int = 20_000
 
 
 def to_sweep(args: SweepArgs) -> dict:
