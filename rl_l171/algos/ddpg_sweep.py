@@ -1,6 +1,8 @@
 import time
 from dataclasses import asdict, dataclass
 
+import numpy as np
+
 from rl_l171.algos.ddpg import Args
 
 
@@ -10,9 +12,12 @@ class SweepArgs(Args):
     wandb_sweep_id: str | None = None
     seed: int = 0
     eval_episodes: int = 100
-    method: str = "random"
+    method: str = "grid"
     metric: str = "eval/cube_distance_mean"
     goal: str = "minimize"
+
+    # latest sweep
+    total_timesteps: int = 200_000
 
 
 def to_sweep(args: SweepArgs) -> dict:
@@ -25,20 +30,15 @@ def to_sweep(args: SweepArgs) -> dict:
     cfg_params.update(
         {
             "seed": {"values": [0, 1, 2, 3, 4]},
-            "total_timesteps": {"values": [50000, 100000, 200000]},
-            "learning_rate": {
-                "distribution": "log_uniform_values",
-                "min": 1e-4,
-                "max": 1e-3,
-            },
-            "buffer_size": {"values": [2048, 10_000, 1_000_000]},
-            "tau": {"min": 0.001, "max": 0.05},
-            "batch_size": {"values": [256, 512, 1024, 2048]},
-            "learning_starts": {"values": [2048, 2048 * 2, 2048 * 4]},
+            "learning_rate": np.linspace(1e-4, 1e-3, num=4).round(4).tolist(),
+            "buffer_size": {"values": [10_000, 1_000_000]},
+            "tau": np.linspace(1e-3, 1e-2, num=4).round(4).tolist(),
+            "batch_size": {"values": [256, 512, 1024]},
+            "learning_starts": {"values": [2048, 4096]},
             "policy_frequency": {"values": [1, 2, 4]},
             "max_grad_norm": {"values": [1.0, 10.0]},
             "exploration_timesteps": {"values": [0.25, 0.5, 0.75]},
-            "max_nr_steps": {"values": [100, 200, 400]},
+            "max_nr_steps": {"values": [100, 200]},
             "buffer_strategy": {
                 "values": [
                     "random",
@@ -46,7 +46,7 @@ def to_sweep(args: SweepArgs) -> dict:
                     "priority_actor",
                     "priority_actor_critic",
                     "priority_inverse_critic",
-                    "priority_streaming",
+                    # "priority_streaming",  # does not work yet
                 ]
             },
         }
