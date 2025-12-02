@@ -19,6 +19,8 @@ class SweepArgs(Args):
     total_timesteps: int = 200_000
     eval_episodes: int = 10
     evaluation_frequency: int = 20_000
+    learning_starts: int = 4096
+    exploration_timesteps: int = 50_000
 
 
 def to_sweep(args: SweepArgs) -> dict:
@@ -35,10 +37,8 @@ def to_sweep(args: SweepArgs) -> dict:
             "buffer_size": {"values": [10_000, 1_000_000]},
             "tau": {"values": np.linspace(1e-3, 1e-2, num=4).round(4).tolist()},
             "batch_size": {"values": [256, 512, 1024]},
-            "learning_starts": {"values": [2048, 4096]},
             "policy_frequency": {"values": [2, 4]},
             "max_grad_norm": {"values": [1.0, 10.0]},
-            "exploration_timesteps": {"values": [0.25, 0.5, 0.75]},
             "max_nr_steps": {"values": [100, 200]},
             "buffer_strategy": {
                 "values": [
