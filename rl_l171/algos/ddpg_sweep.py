@@ -30,9 +30,9 @@ def to_sweep(args: SweepArgs) -> dict:
     cfg_params.update(
         {
             "seed": {"values": [0, 1, 2, 3, 4]},
-            "learning_rate": np.linspace(1e-4, 1e-3, num=4).round(4).tolist(),
+            "learning_rate": {"values": np.linspace(1e-4, 1e-3, num=4).round(4).tolist()},
             "buffer_size": {"values": [10_000, 1_000_000]},
-            "tau": np.linspace(1e-3, 1e-2, num=4).round(4).tolist(),
+            "tau": {"values": np.linspace(1e-3, 1e-2, num=4).round(4).tolist()},
             "batch_size": {"values": [256, 512, 1024]},
             "learning_starts": {"values": [2048, 4096]},
             "policy_frequency": {"values": [1, 2, 4]},
