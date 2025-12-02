@@ -11,7 +11,7 @@ class SweepArgs(Args):
     wandb_project_name: str = "rl171_sweep"
     wandb_sweep_id: str | None = None
     seed: int = 0
-    method: str = "grid"
+    method: str = "random"
     metric: str = "eval/cube_distance_mean"
     goal: str = "minimize"
 
@@ -36,7 +36,7 @@ def to_sweep(args: SweepArgs) -> dict:
             "tau": {"values": np.linspace(1e-3, 1e-2, num=4).round(4).tolist()},
             "batch_size": {"values": [256, 512, 1024]},
             "learning_starts": {"values": [2048, 4096]},
-            "policy_frequency": {"values": [1, 2, 4]},
+            "policy_frequency": {"values": [2, 4]},
             "max_grad_norm": {"values": [1.0, 10.0]},
             "exploration_timesteps": {"values": [0.25, 0.5, 0.75]},
             "max_nr_steps": {"values": [100, 200]},
